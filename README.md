@@ -50,10 +50,16 @@ npm run dev
 chmod +x scripts/*.sh
 ```
 
-- 仅启动后端（会尝试自动拉起 MySQL 容器）：
+- 仅启动后端（优先复用已存在的 `demo-mysql` 容器，不存在才自动创建）：
 
 ```bash
 ./scripts/start-backend.sh
+```
+
+可通过环境变量覆盖容器名：
+
+```bash
+MYSQL_CONTAINER_NAME=your-mysql-container ./scripts/start-backend.sh
 ```
 
 - 仅启动前端：
