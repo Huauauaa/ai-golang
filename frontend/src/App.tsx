@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, Card, Form, Input, List, Space, Tag, Typography, message } from 'antd'
 
 const { Title, Text } = Typography
@@ -18,7 +18,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [api, contextHolder] = message.useMessage()
 
-  const loadTodos = async () => {
+  const loadTodos = useCallback(async () => {
     setLoading(true)
     try {
       const response = await fetch(`${API_BASE_URL}/api/todos`)
@@ -32,7 +32,7 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [api])
 
   const addTodo = async (values: { title: string }) => {
     try {
@@ -53,8 +53,8 @@ function App() {
   }
 
   useEffect(() => {
-    loadTodos().catch(() => undefined)
-  }, [])
+    void loadTodos()
+  }, [loadTodos])
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl p-6 md:p-10">
@@ -92,7 +92,7 @@ function App() {
         <Card
           title="Todo 列表"
           extra={
-            <Button loading={loading} onClick={() => loadTodos()}>
+            <Button loading={loading} onClick={() => void loadTodos()}>
               刷新
             </Button>
           }
