@@ -44,6 +44,35 @@ npm run dev
 
 前端默认地址：`http://localhost:5173`
 
+### 一键启动脚本
+
+```bash
+chmod +x scripts/*.sh
+```
+
+- 仅启动后端（会尝试自动拉起 MySQL 容器）：
+
+```bash
+./scripts/start-backend.sh
+```
+
+- 仅启动前端：
+
+```bash
+./scripts/start-frontend.sh
+```
+
+- 同时启动前后端：
+
+```bash
+./scripts/start-dev.sh
+```
+
+日志位置：
+
+- `.logs/backend.log`
+- `.logs/frontend.log`
+
 ## Docker Compose 一键启动
 
 ```bash
