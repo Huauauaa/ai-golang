@@ -38,8 +38,8 @@ go run .
 ```bash
 cd frontend
 cp .env.example .env
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 前端默认地址：`http://localhost:5173`

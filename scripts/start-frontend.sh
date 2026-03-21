@@ -4,9 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "Error: npm command not found. Please install Node.js first."
-  exit 1
+if ! command -v pnpm >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1; then
+    echo "[frontend] pnpm not found, enabling via corepack..."
+    corepack enable
+    corepack prepare pnpm@latest --activate
+  else
+    echo "Error: pnpm/corepack command not found. Please install Node.js first."
+    exit 1
+  fi
 fi
 
 if [[ ! -f "${FRONTEND_DIR}/.env" && -f "${FRONTEND_DIR}/.env.example" ]]; then
@@ -17,9 +23,9 @@ fi
 if [[ ! -d "${FRONTEND_DIR}/node_modules" ]]; then
   echo "[frontend] Installing dependencies..."
   cd "${FRONTEND_DIR}"
-  npm install
+  pnpm install
 fi
 
 echo "[frontend] Starting Vite dev server on http://localhost:5173 ..."
 cd "${FRONTEND_DIR}"
-exec npm run dev
+exec pnpm run dev
