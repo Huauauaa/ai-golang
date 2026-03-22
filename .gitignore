@@ -1,0 +1,6 @@
+.env
+**/.env
+**/.env.local
+**/.DS_Store
+backend/tmp/
+.logs/
