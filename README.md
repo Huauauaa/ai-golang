@@ -33,6 +33,17 @@ go run .
 
 后端默认地址：`http://localhost:8080`
 
+数据库默认连接：
+
+- `DB_USER=root`
+- `DB_PASSWORD=root`
+- `DB_NAME=app`
+
+后端启动时会执行 DDL，自动确保：
+
+- `app` 数据库存在（`CREATE DATABASE IF NOT EXISTS app`）
+- `todos` 表存在（`CREATE TABLE IF NOT EXISTS todos`）
+
 ### 3) 启动前端
 
 ```bash

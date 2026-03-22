@@ -4,16 +4,14 @@ services:
     container_name: demo-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root123456
-      MYSQL_DATABASE: app
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app123456
+      MYSQL_ROOT_PASSWORD: root
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./backend/sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uapp", "-papp123456"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -27,8 +25,8 @@ services:
       PORT: 8080
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: app
-      DB_PASSWORD: app123456
+      DB_USER: root
+      DB_PASSWORD: root
       DB_NAME: app
       DB_RETRY_TIMES: 30
       DB_RETRY_INTERVAL_SECONDS: 2

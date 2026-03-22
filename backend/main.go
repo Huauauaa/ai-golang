@@ -1,11 +1,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -27,14 +27,22 @@ type createTodoRequest struct {
 	Title string `json:"title" binding:"required,min=2,max=255"`
 }
 
+var mysqlIdentifierPattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
+type dbConfig struct {
+	Host          string
+	Port          string
+	User          string
+	Password      string
+	Name          string
+	MaxRetries    int
+	RetryInterval int
+}
+
 func main() {
-	db, err := connectDatabase()
+	db, err := connectDatabase(loadDBConfig())
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
-	}
-
-	if err := db.AutoMigrate(&Todo{}); err != nil {
-		log.Fatalf("failed to migrate database: %v", err)
 	}
 
 	router := gin.Default()
@@ -82,46 +90,121 @@ func main() {
 	}
 }
 
-func connectDatabase() (*gorm.DB, error) {
-	host := getEnv("DB_HOST", "127.0.0.1")
-	port := getEnv("DB_PORT", "3306")
-	user := getEnv("DB_USER", "app")
-	password := getEnv("DB_PASSWORD", "app123456")
-	name := getEnv("DB_NAME", "app")
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		user,
-		password,
-		host,
-		port,
-		name,
-	)
-
-	maxRetries := getEnvAsInt("DB_RETRY_TIMES", 20)
-	retryInterval := getEnvAsInt("DB_RETRY_INTERVAL_SECONDS", 2)
-
+func connectDatabase(cfg dbConfig) (*gorm.DB, error) {
 	var db *gorm.DB
 	var err error
 
-	for i := 1; i <= maxRetries; i++ {
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
-		if err == nil {
-			sqlDB, dbErr := db.DB()
-			if dbErr == nil && sqlDB.Ping() == nil {
-				return db, nil
-			}
-			if dbErr != nil {
-				err = dbErr
-			} else {
-				err = errors.New("ping database failed")
-			}
+	for i := 1; i <= cfg.MaxRetries; i++ {
+		if err = ensureDatabaseExists(cfg); err != nil {
+			log.Printf("database setup attempt %d/%d failed: %v", i, cfg.MaxRetries, err)
+			time.Sleep(time.Duration(cfg.RetryInterval) * time.Second)
+			continue
 		}
 
-		log.Printf("database connection attempt %d/%d failed: %v", i, maxRetries, err)
-		time.Sleep(time.Duration(retryInterval) * time.Second)
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			cfg.User,
+			cfg.Password,
+			cfg.Host,
+			cfg.Port,
+			cfg.Name,
+		)
+
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		if err != nil {
+			log.Printf("database connection attempt %d/%d failed: %v", i, cfg.MaxRetries, err)
+			time.Sleep(time.Duration(cfg.RetryInterval) * time.Second)
+			continue
+		}
+
+		sqlDB, dbErr := db.DB()
+		if dbErr != nil {
+			err = dbErr
+			log.Printf("database connection attempt %d/%d failed: %v", i, cfg.MaxRetries, err)
+			time.Sleep(time.Duration(cfg.RetryInterval) * time.Second)
+			continue
+		}
+
+		if pingErr := sqlDB.Ping(); pingErr != nil {
+			err = pingErr
+			_ = sqlDB.Close()
+			log.Printf("database connection attempt %d/%d failed: %v", i, cfg.MaxRetries, err)
+			time.Sleep(time.Duration(cfg.RetryInterval) * time.Second)
+			continue
+		}
+
+		if ddlErr := ensureTodoDDL(db); ddlErr != nil {
+			err = ddlErr
+			_ = sqlDB.Close()
+			log.Printf("database connection attempt %d/%d failed: %v", i, cfg.MaxRetries, err)
+			time.Sleep(time.Duration(cfg.RetryInterval) * time.Second)
+			continue
+		}
+
+		return db, nil
 	}
 
 	return nil, err
+}
+
+func loadDBConfig() dbConfig {
+	return dbConfig{
+		Host:          getEnv("DB_HOST", "127.0.0.1"),
+		Port:          getEnv("DB_PORT", "3306"),
+		User:          getEnv("DB_USER", "root"),
+		Password:      getEnv("DB_PASSWORD", "root"),
+		Name:          getEnv("DB_NAME", "app"),
+		MaxRetries:    getEnvAsInt("DB_RETRY_TIMES", 20),
+		RetryInterval: getEnvAsInt("DB_RETRY_INTERVAL_SECONDS", 2),
+	}
+}
+
+func ensureDatabaseExists(cfg dbConfig) error {
+	if !mysqlIdentifierPattern.MatchString(cfg.Name) {
+		return fmt.Errorf("invalid database name: %s", cfg.Name)
+	}
+
+	adminDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=True&loc=Local",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+	)
+
+	db, err := gorm.Open(mysql.Open(adminDSN), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+
+	if err := sqlDB.Ping(); err != nil {
+		return err
+	}
+
+	createDatabaseSQL := fmt.Sprintf(
+		"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
+		cfg.Name,
+	)
+
+	return db.Exec(createDatabaseSQL).Error
+}
+
+func ensureTodoDDL(db *gorm.DB) error {
+	const createTodosTableDDL = `
+CREATE TABLE IF NOT EXISTS todos (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  title VARCHAR(255) NOT NULL,
+  completed TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+
+	return db.Exec(createTodosTableDDL).Error
 }
 
 func getEnv(key, fallback string) string {
